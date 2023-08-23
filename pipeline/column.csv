@@ -1,1 +1,2 @@
 dataset,resource,column,field
+flood-risk-zone,,objectid,reference

@@ -1,1 +1,4 @@
 endpoint,endpoint-url,parameters,plugin,entry-date,start-date,end-date
+710664365802fd3664adb099080a4b996834888deb34ebd4c62c40cbd0e45776,https://environment.data.gov.uk/arcgis/rest/services/EA/FloodMapForPlanningRiversAndSeaFloodZone2/MapServer/0,,arcgis,2023-08-23T10:10:49:32Z,,
+c8a948c026a4e753f750bf33b731d84d37a3f002c7efda88c2917e45307d3a89,https://raw.githubusercontent.com/digital-land/flood-risk-zone-collection/main/data/flood-risk-level.csv,,,2023-08-23T13:13:34:04Z,,
+b83917039e9cc99f1a218c273c33907c47358292f01b54997655fd176cc27c36,https://raw.githubusercontent.com/digital-land/flood-risk-zone-collection/main/data/flood-risk-type.csv,,,2023-08-23T13:13:43:34Z,,

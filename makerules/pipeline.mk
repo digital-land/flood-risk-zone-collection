@@ -79,11 +79,10 @@ PIPELINE_CONFIG_FILES=\
 	$(PIPELINE_DIR)convert.csv\
 	$(PIPELINE_DIR)default.csv\
 	$(PIPELINE_DIR)default-value.csv\
-	$(PIPELINE_DIR)filter.csv\
 	$(PIPELINE_DIR)lookup.csv\
 	$(PIPELINE_DIR)patch.csv\
 	$(PIPELINE_DIR)skip.csv\
-	$(PIPELINE_DIR)transform.csv
+	
 endif
 
 define run-pipeline
