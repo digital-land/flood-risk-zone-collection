@@ -22,6 +22,7 @@ specification/
 
 # stored in S3
 collection/resource/
+collection/log/
 dataset/
 transformed/
 issue/
