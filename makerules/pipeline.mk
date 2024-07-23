@@ -144,7 +144,7 @@ clean::
 init::	$(CACHE_DIR)organisation.csv
 
 makerules::
-	curl -qfsL '$(SOURCE_URL)/makerules/main/pipeline.mk' > makerules/pipeline.mk
+	curl -qfsL '$(SOURCE_URL)/makerules/feature/flattened-dataset-content-disposition/pipeline.mk' > makerules/pipeline.mk
 
 save-transformed::
 	aws s3 sync $(TRANSFORMED_DIR) s3://$(COLLECTION_DATASET_BUCKET_NAME)/$(REPOSITORY)/$(TRANSFORMED_DIR) --no-progress
@@ -158,7 +158,7 @@ save-dataset::
 ifeq ($(HOISTED_COLLECTION_DATASET_BUCKET_NAME),digital-land-$(ENVIRONMENT)-collection-dataset-hoisted)
 	aws s3 sync $(FLATTENED_DIR) s3://$(HOISTED_COLLECTION_DATASET_BUCKET_NAME)/data/ --no-progress
 else
-	aws s3 sync $(FLATTENED_DIR) s3://$(HOISTED_COLLECTION_DATASET_BUCKET_NAME)/dataset/ --no-progress
+	aws s3 sync $(FLATTENED_DIR) s3://$(HOISTED_COLLECTION_DATASET_BUCKET_NAME)/dataset/ --no-progress --content-disposition attachment
 endif
 
 save-expectations::
