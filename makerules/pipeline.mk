@@ -29,8 +29,12 @@ ifeq ($(FIXED_DIR),)
 FIXED_DIR=fixed/
 endif
 
+ifeq ($(VAR_DIR),)
+VAR_DIR=var/
+endif
+
 ifeq ($(CACHE_DIR),)
-CACHE_DIR=var/cache/
+CACHE_DIR=$(VAR_DIR)cache/
 endif
 
 ifeq ($(TRANSFORMED_DIR),)
@@ -41,12 +45,24 @@ ifeq ($(ISSUE_DIR),)
 ISSUE_DIR=issue/
 endif
 
+ifeq ($(PERFORMANCE_DIR),)
+PERFORMANCE_DIR=performance/
+endif
+
+ifeq ($(OPERATIONAL_ISSUE_DIR),)
+OPERATIONAL_ISSUE_DIR=$(PERFORMANCE_DIR)operational_issue/
+endif
+
 ifeq ($(COLUMN_FIELD_DIR),)
-COLUMN_FIELD_DIR=var/column-field/
+COLUMN_FIELD_DIR=$(VAR_DIR)column-field/
 endif
 
 ifeq ($(DATASET_RESOURCE_DIR),)
-DATASET_RESOURCE_DIR=var/dataset-resource/
+DATASET_RESOURCE_DIR=$(VAR_DIR)dataset-resource/
+endif
+
+ifeq ($(CONVERTED_RESOURCE_DIR),)
+CONVERTED_RESOURCE_DIR=$(VAR_DIR)converted-resource/
 endif
 
 ifeq ($(DATASET_DIR),)
@@ -62,7 +78,9 @@ DATASET_DIRS=\
 	$(TRANSFORMED_DIR)\
 	$(COLUMN_FIELD_DIR)\
 	$(DATASET_RESOURCE_DIR)\
+	$(CONVERTED_RESOURCE_DIR)\
 	$(ISSUE_DIR)\
+	$(PERFORMANCE_DIR)\
 	$(DATASET_DIR)\
 	$(FLATTENED_DIR)
 endif
@@ -84,27 +102,29 @@ PIPELINE_CONFIG_FILES=\
 	$(PIPELINE_DIR)old-entity.csv\
 	$(PIPELINE_DIR)patch.csv\
 	$(PIPELINE_DIR)skip.csv\
-	$(PIPELINE_DIR)transform.csv
+	$(PIPELINE_DIR)transform.csv\
+	$(PIPELINE_DIR)entity-organisation.csv
 endif
 
 define run-pipeline
-	mkdir -p $(@D) $(ISSUE_DIR)$(notdir $(@D)) $(COLUMN_FIELD_DIR)$(notdir $(@D)) $(DATASET_RESOURCE_DIR)$(notdir $(@D))
-	digital-land ${DIGITAL_LAND_OPTS} --dataset $(notdir $(@D)) --pipeline-dir $(PIPELINE_DIR) $(DIGITAL_LAND_FLAGS) pipeline $(1) --organisation-path $(CACHE_DIR)organisation.csv --issue-dir $(ISSUE_DIR)$(notdir $(@D)) --column-field-dir $(COLUMN_FIELD_DIR)$(notdir $(@D)) --dataset-resource-dir $(DATASET_RESOURCE_DIR)$(notdir $(@D)) $(PIPELINE_FLAGS) $< $@
+	mkdir -p $(@D) $(ISSUE_DIR)$(notdir $(@D)) $(OPERATIONAL_ISSUE_DIR) $(COLUMN_FIELD_DIR)$(notdir $(@D)) $(DATASET_RESOURCE_DIR)$(notdir $(@D)) $(CONVERTED_RESOURCE_DIR)$(notdir $(@D))
+	digital-land ${DIGITAL_LAND_OPTS} --dataset $(notdir $(@D)) --pipeline-dir $(PIPELINE_DIR) $(DIGITAL_LAND_FLAGS) pipeline $(1) --issue-dir $(ISSUE_DIR)$(notdir $(@D)) --column-field-dir $(COLUMN_FIELD_DIR)$(notdir $(@D)) --dataset-resource-dir $(DATASET_RESOURCE_DIR)$(notdir $(@D)) --converted-resource-dir $(CONVERTED_RESOURCE_DIR)$(notdir $(@D)) --config-path $(CACHE_DIR)config.sqlite3 --organisation-path $(CACHE_DIR)organisation.csv $(PIPELINE_FLAGS) $< $@
 endef
 
 define build-dataset =
 	mkdir -p $(@D)
-	time digital-land ${DIGITAL_LAND_OPTS} --dataset $(notdir $(basename $@)) dataset-create --output-path $(basename $@).sqlite3 --organisation-path $(CACHE_DIR)organisation.csv --issue-dir $(ISSUE_DIR) --column-field-dir=$(COLUMN_FIELD_DIR) --dataset-resource-dir $(DATASET_RESOURCE_DIR) $(^)
+	time digital-land ${DIGITAL_LAND_OPTS} --dataset $(notdir $(basename $@)) --pipeline-dir $(PIPELINE_DIR)  dataset-create --output-path $(basename $@).sqlite3 --organisation-path $(CACHE_DIR)organisation.csv --issue-dir $(ISSUE_DIR) --column-field-dir=$(COLUMN_FIELD_DIR) --dataset-resource-dir $(DATASET_RESOURCE_DIR) $(^)
 	time datasette inspect $(basename $@).sqlite3 --inspect-file=$(basename $@).sqlite3.json
-	time digital-land ${DIGITAL_LAND_OPTS} --dataset $(notdir $(basename $@)) dataset-entries $(basename $@).sqlite3 $@
+	time digital-land ${DIGITAL_LAND_OPTS} --dataset $(notdir $(basename $@)) --pipeline-dir $(PIPELINE_DIR) dataset-entries $(basename $@).sqlite3 $@
 	mkdir -p $(FLATTENED_DIR)
-	time digital-land ${DIGITAL_LAND_OPTS} --dataset $(notdir $(basename $@)) dataset-entries-flattened $@ $(FLATTENED_DIR)
+	time digital-land ${DIGITAL_LAND_OPTS} --dataset $(notdir $(basename $@)) --pipeline-dir $(PIPELINE_DIR) dataset-entries-flattened $@ $(FLATTENED_DIR)
 	md5sum $@ $(basename $@).sqlite3
 	csvstack $(ISSUE_DIR)$(notdir $(basename $@))/*.csv > $(basename $@)-issue.csv
 	mkdir -p $(EXPECTATION_DIR)
 	time digital-land ${DIGITAL_LAND_OPTS} expectations-dataset-checkpoint --output-dir=$(EXPECTATION_DIR) --specification-dir=specification --data-path=$(basename $@).sqlite3
 	csvstack $(EXPECTATION_DIR)/**/$(notdir $(basename $@))-results.csv > $(basename $@)-expectation-result.csv
 	csvstack $(EXPECTATION_DIR)/**/$(notdir $(basename $@))-issues.csv > $(basename $@)-expectation-issue.csv
+	time digital-land ${DIGITAL_LAND_OPTS} --dataset $(notdir $(basename $@)) operational-issue-save-csv --operational-issue-dir $(OPERATIONAL_ISSUE_DIR)
 endef
 
 collection::
@@ -138,21 +158,39 @@ clobber::
 	rm -rf $(DATASET_DIRS)
 
 clean::
-	rm -rf ./var
+	rm -rf ./$(VAR_DIR)
 
 # local copy of the organisation dataset
+# Download historic operational issue log data for relevant datasets
 init::	$(CACHE_DIR)organisation.csv
+	@mkdir -p $(OPERATIONAL_ISSUE_DIR)
+	@datasets=$$(awk -F , '$$2 == "$(COLLECTION_NAME)" {print $$4}' specification/dataset.csv); \
+	for dataset in $$datasets; do \
+		mkdir -p $(OPERATIONAL_ISSUE_DIR)$$dataset; \
+		url="$(DATASTORE_URL)$(OPERATIONAL_ISSUE_DIR)$$dataset/operational-issue.csv"; \
+		echo "Downloading operational issue log for $$dataset at url $$url";\
+		status_code=$$(curl --write-out "%{http_code}" --silent --output /dev/null "$$url"); \
+		if [ "$$status_code" -eq 200 ]; then \
+			echo "Downloading file..."; \
+			curl --silent --output "$(OPERATIONAL_ISSUE_DIR)$$dataset/operational-issue.csv" "$$url"; \
+			echo "Log downloaded to $(OPERATIONAL_ISSUE_DIR)$$dataset/operational-issue.csv"; \
+		else \
+			echo "File not found at $$url"; \
+		fi; \
+	done
 
 makerules::
-	curl -qfsL '$(SOURCE_URL)/makerules/main/pipeline.mk' > makerules/pipeline.mk
+	curl -qfsL '$(MAKERULES_URL)pipeline.mk' > makerules/pipeline.mk
 
 save-transformed::
 	aws s3 sync $(TRANSFORMED_DIR) s3://$(COLLECTION_DATASET_BUCKET_NAME)/$(REPOSITORY)/$(TRANSFORMED_DIR) --no-progress
 	aws s3 sync $(ISSUE_DIR) s3://$(COLLECTION_DATASET_BUCKET_NAME)/$(REPOSITORY)/$(ISSUE_DIR) --no-progress
 	aws s3 sync $(COLUMN_FIELD_DIR) s3://$(COLLECTION_DATASET_BUCKET_NAME)/$(REPOSITORY)/$(COLUMN_FIELD_DIR) --no-progress
 	aws s3 sync $(DATASET_RESOURCE_DIR) s3://$(COLLECTION_DATASET_BUCKET_NAME)/$(REPOSITORY)/$(DATASET_RESOURCE_DIR) --no-progress
+	aws s3 sync $(CONVERTED_RESOURCE_DIR) s3://$(COLLECTION_DATASET_BUCKET_NAME)/$(REPOSITORY)/$(CONVERTED_RESOURCE_DIR) --no-progress
 
 save-dataset::
+	@mkdir -p $(DATASET_DIR)
 	aws s3 sync $(DATASET_DIR) s3://$(COLLECTION_DATASET_BUCKET_NAME)/$(REPOSITORY)/$(DATASET_DIR) --no-progress
 	@mkdir -p $(FLATTENED_DIR)
 ifeq ($(HOISTED_COLLECTION_DATASET_BUCKET_NAME),digital-land-$(ENVIRONMENT)-collection-dataset-hoisted)
@@ -165,10 +203,14 @@ save-expectations::
 	@mkdir -p $(EXPECTATION_DIR)
 	aws s3 sync $(EXPECTATION_DIR) s3://$(COLLECTION_DATASET_BUCKET_NAME)/$(EXPECTATION_DIR) --exclude "*" --include "*.csv" --no-progress
 
+save-performance::
+	@mkdir -p $(PERFORMANCE_DIR)
+	aws s3 sync $(PERFORMANCE_DIR) s3://$(COLLECTION_DATASET_BUCKET_NAME)/$(PERFORMANCE_DIR) --no-progress
+
 # convert an individual resource
 # .. this assumes conversion is the same for every dataset, but it may not be soon
 var/converted/%.csv: collection/resource/%
-	mkdir -p var/converted/
+	mkdir -p $(VAR_DIR)converted/
 	digital-land ${DIGITAL_LAND_OPTS} convert $<
 
 transformed::
@@ -194,6 +236,13 @@ $(PIPELINE_DIR)%.csv:
 	fi
 
 config:: $(PIPELINE_CONFIG_FILES)
+ifeq ($(PIPELINE_CONFIG_FILES), .dummy)
+	echo "pipeline_config_files are dummy not making config.sqlite" 
+else
+	mkdir -p $(CACHE_DIR)
+	digital-land --pipeline-dir $(PIPELINE_DIR) config-create --config-path $(CACHE_DIR)config.sqlite3
+	digital-land --pipeline-dir $(PIPELINE_DIR) config-load --config-path $(CACHE_DIR)config.sqlite3
+endif
 
 clean::
 	rm -f $(PIPELINE_CONFIG_FILES)
